@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SSR — Selection-Based Structured Reasoning</title>
+  <meta name="description" content="Selection-based Structured Reasoning: efficient multimodal search agents through parallel reasoning decoding. Over 90% lower reasoning latency with competitive task performance.">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f567d'/%3E%3Cpath d='M8 10h16M8 16h16M8 22h9' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="assets/katex/katex.min.css">
+  <script defer src="assets/katex/katex.min.js"></script>
+  <script defer src="assets/katex/contrib/auto-render.min.js"></script>
+  <script defer src="script.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="hero" id="top">
+    <div class="hero-inner">
+      <p class="wordmark"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>SSR</p>
+      <h1>Selection-Based Structured Reasoning</h1>
+      <p class="subtitle">Toward Efficient Multimodal Search Agents</p>
+      <div class="authors">
+        <span>Gavin Zhu<sup>1,2</sup></span><span>Xiaoyu Zhu<sup>1,‡,*</sup></span><span>Jiqi Yang<sup>1</sup></span><span>Rui Yang<sup>1</sup></span><span>Arnab Kumar Mondal<sup>1</sup></span><span>Yancheng Wang<sup>1</sup></span><span>Xinke Deng<sup>1</sup></span><span>Jean Oh<sup>2</sup></span><span>Reid Simmons<sup>2</sup></span><span>Joerg Liebelt<sup>1</sup></span><span>Xiang Kong<sup>1</sup></span><span>Zhongyu Jiang<sup>1,*</sup></span>
+      </div>
+      <p class="affiliations"><span><sup>1</sup> Apple</span><span><sup>2</sup> Carnegie Mellon University</span></p>
+      <p class="author-notes">‡ Project Lead &nbsp; · &nbsp; * Corresponding Author</p>
+      <nav class="resource-links" aria-label="Paper and page sections">
+        <a class="pill" href="assets/paper.pdf" target="_blank" rel="noopener"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2h7l4 4v12H5zM12 2v5h4M8 11h5M8 14h5"/></svg>Paper</a>
+        <a class="pill" href="#method">Method</a><a class="pill" href="#results">Results</a><a class="pill" href="#pseudocode">Pseudocode</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
+    <section class="teaser-section" aria-label="SSR at a glance">
+      <figure class="wide teaser">
+        <img id="teaser-animation" src="assets/ssr-overview.gif" width="1200" height="650" alt="Animated comparison: freeform agents generate reasoning token by token, while SSR scores reusable reasoning candidates in parallel, selects a candidate, and generates the next action.">
+        <div class="animation-controls"><button type="button" id="animation-toggle" aria-pressed="false">Pause animation</button></div>
+        <figcaption><strong>Reasoning by selection.</strong> Score reusable reasoning in parallel, then generate a context-specific action.</figcaption>
+      </figure>
+      <div class="highlights wide">
+        <div><strong>&gt;90%</strong><span>lower reasoning latency per turn</span></div>
+        <div><strong>28–54%</strong><span>lower model latency per question</span></div>
+        <div><strong>61.37%</strong><span>average success · 4B · 7 benchmarks</span></div>
+      </div>
+    </section>
+    <section class="section prose" id="abstract">
+      <h2>Abstract</h2>
+      <p>Multimodal agents commonly generate freeform reasoning before each action. For small models, limited model capacity can result in lengthy reasoning that provides little useful guidance for action generation while incurring substantial inference cost. We introduce <strong>Selection-based Structured Reasoning (SSR)</strong>, a framework that reformulates reasoning as selection among pre-specified, reusable natural-language candidates. At each turn, the model selects a candidate based on its likelihood given the current context, without an auxiliary task head. Teacher-forced prefilling computes token likelihoods concurrently within and across candidates using a shared context KV cache. Across seven multimodal search benchmarks, 2B and 4B models, and multiple reinforcement learning objectives and supervised fine-tuning, SSR achieves competitive task performance while reducing per-turn reasoning latency by over 90% and total per-question model inference latency by 28–54%.</p>
+    </section>
+        <section class="section wide" id="method">
+      <h2>Selection-Based Structured Reasoning</h2>
+      <p class="lead">A small library of reusable reasoning. A context-specific action at every turn.</p>
+      <div class="prose">
+        <p>Search questions differ in their entities, images, and answers, but often share the same information needs: identify an unfamiliar object, look up a missing fact, inspect an image detail, or answer from the available evidence. SSR represents these recurring decisions as reusable natural-language reasoning candidates.</p>
+        <p>At each turn, the language model scores every candidate given its current interaction history. The selected reasoning is inserted into the context to guide action generation. The action remains specific to the question: the model generates the search query, crop coordinates, or final answer.</p>
+      </div>
+      <figure>
+        <img class="figure-frame" src="assets/method-overview.png" loading="lazy" alt="SSR overview: the shared interaction history is prefilled, reusable reasoning candidates are scored in parallel, and a selected candidate guides action generation.">
+        <figcaption>Parallel reasoning decoding scores all candidate tokens through teacher-forced prefill, with a shared history KV cache.</figcaption>
+      </figure>
+      <div class="steps">
+        <div class="step"><h3>1. Score in parallel</h3><p>Teacher-force the full candidate texts. Compute token likelihoods concurrently within each candidate and across candidates.</p></div>
+        <div class="step"><h3>2. Select the reasoning</h3><p>Use length-normalized likelihoods to sample a candidate, or choose the highest-scoring candidate at inference.</p></div>
+        <div class="step"><h3>3. Generate and act</h3><p>Append the selected text, generate an action, and execute it. Add the observation to the history and repeat until an answer or stopping condition.</p></div>
+      </div>
+      <div class="prose">
+        <h3>Parallel reasoning decoding</h3>
+        <p>For a candidate $r_i$ with $K_i$ tokens, SSR uses its length-normalized conditional log-likelihood:</p>
+        <div class="equation">$$S_\theta(r_i\mid h_t)=\frac{1}{K_i^\alpha}\sum_{j=1}^{K_i}\log p_\theta(r_{i,j}\mid h_t,r_{i,&lt;j})$$</div>
+        <p>We use $\alpha=1$ by default. For selection temperature $\tau&gt;0$, the scores define a categorical policy:</p>
+        <div class="equation">$$q_\theta(r_i\mid h_t)=\frac{\exp(S_\theta(r_i\mid h_t)/\tau)}{\sum_{k=1}^N\exp(S_\theta(r_k\mid h_t)/\tau)}$$</div>
+        <p>The model then generates the action from $p_\theta(\cdot\mid h_t,r_i)$. Scoring and action generation share the same parameters and system prompt; no auxiliary classification head is needed.</p>
+        <p>Pre-specified candidate tokens remove the sequential dependency of generating a freeform reasoning trace. With fixed model dimensions and idealized parallel reductions, the reasoning computation has depth</p>
+        <div class="equation">$$\begin{aligned}\mathcal D_{\mathrm{freeform}}&amp;=O\!\left(L\log(H+L)\right)\\\mathcal D_{\mathrm{SSR}}&amp;=O\!\left(\log(H+K_{\max})+\log N\right)\end{aligned}$$</div>
+        <p class="small-note">Here, $H$ is the history length, $L$ the generated freeform reasoning length, $N$ the candidate count, and $K_{\max}$ the longest candidate. This characterizes parallel dependency depth; measured latency is reported below.</p>
+        <h3>One reasoning library, seven benchmarks</h3>
+        <p>The experiments use six manually written candidates shared across all benchmarks. Each describes a general information need and the corresponding next step.</p>
+      </div>
+      <p class="library-hint">Hover over an entry or tap it to read the full reasoning candidate.</p>
+      <div class="library" id="reasoning-library">
+        <article class="library-entry" data-candidate="identify-by-image">
+          <button class="library-trigger" type="button" aria-expanded="false" aria-controls="candidate-identify"><span class="library-title">Identify an entity</span><span class="library-short">Use reverse-image search when the entity is unknown.</span><span class="library-label">Full reasoning <span class="library-chevron" aria-hidden="true">⌄</span></span></button>
+          <div class="library-full" id="candidate-identify" aria-hidden="true" inert><div><blockquote>I cannot confidently tell what the specific entity in this image is from its appearance alone, so I should identify it by searching with the image itself before answering.</blockquote></div></div>
+        </article>
+        <article class="library-entry" data-candidate="lookup-fact">
+          <button class="library-trigger" type="button" aria-expanded="false" aria-controls="candidate-fact"><span class="library-title">Look up a fact</span><span class="library-short">Use text search for a missing piece of information.</span><span class="library-label">Full reasoning <span class="library-chevron" aria-hidden="true">⌄</span></span></button>
+          <div class="library-full" id="candidate-fact" aria-hidden="true" inert><div><blockquote>I can tell what the entity in the image is, but I do not know the particular fact the question is asking about, so I should look that information up.</blockquote></div></div>
+        </article>
+        <article class="library-entry" data-candidate="examine-image-detail">
+          <button class="library-trigger" type="button" aria-expanded="false" aria-controls="candidate-detail"><span class="library-title">Examine image detail</span><span class="library-short">Crop or zoom into a relevant image region.</span><span class="library-label">Full reasoning <span class="library-chevron" aria-hidden="true">⌄</span></span></button>
+          <div class="library-full" id="candidate-detail" aria-hidden="true" inert><div><blockquote>The part of the image that matters for this question is small or hard to make out, so I should examine that region more closely before I decide.</blockquote></div></div>
+        </article>
+        <article class="library-entry" data-candidate="answer-from-evidence">
+          <button class="library-trigger" type="button" aria-expanded="false" aria-controls="candidate-evidence"><span class="library-title">Answer from evidence</span><span class="library-short">Combine information gathered during the interaction.</span><span class="library-label">Full reasoning <span class="library-chevron" aria-hidden="true">⌄</span></span></button>
+          <div class="library-full" id="candidate-evidence" aria-hidden="true" inert><div><blockquote>The details I have gathered so far already contain what the question is asking for, so I can now give the final answer.</blockquote></div></div>
+        </article>
+        <article class="library-entry" data-candidate="answer-from-image">
+          <button class="library-trigger" type="button" aria-expanded="false" aria-controls="candidate-image"><span class="library-title">Answer from the image</span><span class="library-short">Use information directly visible in the image.</span><span class="library-label">Full reasoning <span class="library-chevron" aria-hidden="true">⌄</span></span></button>
+          <div class="library-full" id="candidate-image" aria-hidden="true" inert><div><blockquote>The information needed to answer is clearly visible in the image itself, so I can determine the answer by reading it directly from what I see.</blockquote></div></div>
+        </article>
+        <article class="library-entry" data-candidate="general-knowledge">
+          <button class="library-trigger" type="button" aria-expanded="false" aria-controls="candidate-knowledge"><span class="library-title">Answer from knowledge</span><span class="library-short">Use the model’s existing general knowledge.</span><span class="library-label">Full reasoning <span class="library-chevron" aria-hidden="true">⌄</span></span></button>
+          <div class="library-full" id="candidate-knowledge" aria-hidden="true" inert><div><blockquote>I recognize the main subject of this image and I already know the answer from general knowledge, so I can answer the question directly.</blockquote></div></div>
+        </article>
+      </div>
+      <div class="prose">
+        <h3>Joint training for selection and action</h3>
+        <p>SSR supports both supervised fine-tuning and reinforcement learning. SFT combines a categorical loss for selecting the target reasoning with the token-level action loss:</p>
+        <div class="equation">$$\mathcal L_{\mathrm{SFT}}=-\sum_t\left[\lambda^{\mathrm{SFT}}_{\mathrm{reason}}\log q_\theta(z_t\mid h_t)+\frac{1}{|a_t|}\sum_k\log p_\theta(a_{t,k}\mid h_t,z_t,a_{t,&lt;k})\right]$$</div>
+        <p>For GRPO-style training, the inserted reasoning contributes one categorical importance ratio, while generated action tokens retain their usual token-level ratios:</p>
+        <div class="equation">$$\rho_t^{\mathrm{reason}}=\frac{q_\theta(z_t\mid h_t)}{q_{\mathrm{old}}(z_t\mid h_t)}\qquad \rho_{t,k}^{\mathrm{action}}=\frac{p_\theta(a_{t,k}\mid h_t,z_t,a_{t,&lt;k})}{p_{\mathrm{old}}(a_{t,k}\mid h_t,z_t,a_{t,&lt;k})}$$</div>
+        <p>Group-normalized rewards provide the advantages. The clipped objective weights reasoning selection by $\gamma^{\mathrm{RL}}_{\mathrm{reason}}$ and applies reference-policy KL regularization to generated action tokens. SSR can be trained directly with RL without an SFT warm start, and is also compatible with GSPO and SAPO. <a href="#algorithm-2">Algorithm 2</a> specifies the grouped GRPO update with detached competitor scores.</p>
+      </div>
+    </section>
+    <div class="band">
+      <section class="section wide" id="results">
+        <h2>Competitive Performance, Lower Latency</h2>
+        <div class="prose">
+          <p>We evaluate Qwen3-VL 2B and 4B agents on seven multimodal search benchmarks with a shared harness for reverse-image search, text search, and image cropping. Training uses VisualProbe, DeepEyes, and FVQA-train, with outcome and format rewards for RL.</p>
+          <h3>Multimodal search performance</h3>
+          <p>SSR reaches <strong>61.37% average success at 4B</strong>, comparable to the strongest reported trained 4B baseline in the paper (61.25%). At 2B, SSR reaches 51.26%, close to the zero-shot Qwen3-VL-8B agent’s 51.33%.</p>
+        </div>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Trained 2B and 4B agents: success on seven benchmarks; scroll horizontally on narrow screens"><table><thead><tr><th scope="col">Model</th><th scope="col">Size</th><th scope="col">MMSearch</th><th scope="col">HR-MMSearch</th><th scope="col">FVQA-test</th><th scope="col">SimpleVQA</th><th scope="col">LiveVQA</th><th scope="col">MAT-Search</th><th scope="col">InfoSeek</th><th scope="col">Average</th></tr></thead><tbody><tr><th scope="row">MMSearch-R1*</th><td>4B</td><td>53.80</td><td>25.50</td><td>67.20</td><td>68.50</td><td>50.60</td><td>78.00</td><td>60.00</td><td>57.66</td></tr>
+<tr><th scope="row">SenseNova-MARS*</th><td>4B</td><td>44.05</td><td>24.67</td><td>57.19</td><td>65.55</td><td>43.06</td><td>78.67</td><td>48.40</td><td>51.65</td></tr>
+<tr><th scope="row">TAPO + GRPO</th><td>4B</td><td>54.97</td><td>33.11</td><td>65.56</td><td>68.31</td><td>54.05</td><td>82.00</td><td>58.85</td><td>59.55</td></tr>
+<tr><th scope="row">TAPO + GSPO</th><td>4B</td><td>60.82</td><td>31.48</td><td>66.61</td><td>70.98</td><td>56.14</td><td>83.33</td><td>59.40</td><td>61.25</td></tr>
+<tr><th scope="row">TAPO + SAPO</th><td>4B</td><td>56.73</td><td>31.48</td><td>67.17</td><td>71.27</td><td>55.36</td><td>81.33</td><td>59.95</td><td>60.47</td></tr>
+<tr class="ours"><th scope="row">SSR (ours)</th><td>4B</td><td>61.40</td><td>30.16</td><td>70.22</td><td>71.08</td><td>57.19</td><td>78.67</td><td>60.90</td><td>61.37</td></tr>
+<tr class="ours"><th scope="row">SSR (ours)</th><td>2B</td><td>51.18</td><td>17.06</td><td>61.16</td><td>61.83</td><td>51.54</td><td>62.59</td><td>53.44</td><td>51.26</td></tr></tbody></table></div>
+        <p class="table-note">Trained 2B/4B agents. All models were trained for one epoch. Success rate (%), averaged across seven benchmarks. * Reproduced results. The highlighted rows are SSR.</p>
+        <div class="prose">
+          <h3 id="training-objectives">Consistent efficiency across training objectives</h3>
+          <p>SSR reduces mean reasoning latency by over 90% across all tested objectives. It improves average success over freeform GRPO at both model sizes, matches SFT, and shows modest decreases under GSPO and SAPO.</p>
+        </div>
+        <div class="table-wrap objective-table" tabindex="0" role="region" aria-label="Training objective comparison; scroll horizontally on narrow screens"><table><thead><tr><th scope="col">Training objective</th><th scope="col">Size</th><th scope="col">Success (%) ↑</th><th scope="col">Reasoning Latency / Turn<br>(s) ↓</th><th scope="col">Model Latency / Question<br>(s) ↓</th><th scope="col">Throughput (tokens/s) ↑</th></tr></thead><tbody><tr><th scope="row">GRPO · freeform</th><td>4B</td><td>58.65</td><td>0.896</td><td>5.456</td><td>72.7</td></tr>
+<tr class="ours"><th scope="row">GRPO · SSR</th><td>4B</td><td>61.37 <span class="delta improvement">(+4.6%)</span></td><td>0.061 <span class="delta improvement">(-93.2%)</span></td><td>2.514 <span class="delta improvement">(-53.9%)</span></td><td>3029.9 <span class="delta improvement">(+4070.2%)</span></td></tr>
+<tr><th scope="row">GSPO · freeform</th><td>4B</td><td>60.45</td><td>0.939</td><td>5.195</td><td>71.9</td></tr>
+<tr class="ours"><th scope="row">GSPO · SSR</th><td>4B</td><td>58.60 <span class="delta decline">(-3.1%)</span></td><td>0.063 <span class="delta improvement">(-93.3%)</span></td><td>3.706 <span class="delta improvement">(-28.7%)</span></td><td>2526.2 <span class="delta improvement">(+3414.6%)</span></td></tr>
+<tr><th scope="row">SAPO · freeform</th><td>4B</td><td>61.26</td><td>1.113</td><td>6.145</td><td>69.4</td></tr>
+<tr class="ours"><th scope="row">SAPO · SSR</th><td>4B</td><td>60.46 <span class="delta decline">(-1.3%)</span></td><td>0.060 <span class="delta improvement">(-94.6%)</span></td><td>2.862 <span class="delta improvement">(-53.4%)</span></td><td>3215.3 <span class="delta improvement">(+4535.0%)</span></td></tr>
+<tr><th scope="row">SFT · freeform</th><td>4B</td><td>54.55</td><td>0.770</td><td>5.308</td><td>70.9</td></tr>
+<tr class="ours"><th scope="row">SFT · SSR</th><td>4B</td><td>54.57 <span class="delta improvement">(+0.0%)</span></td><td>0.062 <span class="delta improvement">(-91.9%)</span></td><td>3.318 <span class="delta improvement">(-37.5%)</span></td><td>2567.0 <span class="delta improvement">(+3520.5%)</span></td></tr>
+<tr><th scope="row">GRPO · freeform</th><td>2B</td><td>49.98</td><td>0.902</td><td>4.153</td><td>87.2</td></tr>
+<tr class="ours"><th scope="row">GRPO · SSR</th><td>2B</td><td>51.26 <span class="delta improvement">(+2.6%)</span></td><td>0.053 <span class="delta improvement">(-94.1%)</span></td><td>2.125 <span class="delta improvement">(-48.8%)</span></td><td>3302.6 <span class="delta improvement">(+3687.9%)</span></td></tr></tbody></table></div>
+        <p class="table-note"><em>Parenthetical percentages show relative changes from the paired freeform model.</em> Success is measured on the full evaluation sets. Latency profiling uses 100 sampled questions per benchmark on an NVIDIA H100 with SGLang. Model latency includes prefill, reasoning, and action generation across the full trajectory; tool execution and judge time are excluded. Effective throughput counts all scored candidate tokens for SSR and generated reasoning tokens for freeform.</p>
+        <div class="prose">
+          <h3>Faster and more predictable reasoning</h3>
+          <p>On the profiling subset, SSR achieves the highest success rate among the compared methods. Mean reasoning latency is 61 ms and the 95th percentile is 71 ms. Mean model latency is 2.514 seconds per question, about 28% below Sketch-of-Thought, the fastest baseline on this metric.</p>
+        </div>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Efficiency on the profiling subset; scroll horizontally on narrow screens"><table><thead><tr><th scope="col" rowspan="2">Method</th><th scope="col" rowspan="2">Subset success (%) ↑</th><th scope="colgroup" colspan="2">Reasoning Latency / Turn (s) ↓</th><th scope="colgroup" colspan="2">Model Latency / Question (s) ↓</th><th scope="col" rowspan="2">Throughput (tokens/s) ↑</th></tr><tr><th scope="col">Mean</th><th scope="col">p95</th><th scope="col">Mean</th><th scope="col">p95</th></tr></thead><tbody><tr><th scope="row">MMSearch-R1-4B</th><td>51.59</td><td>1.235</td><td>1.892</td><td>5.601</td><td>7.502</td><td>73.8</td></tr>
+<tr><th scope="row">SenseNova-MARS-4B</th><td>49.57</td><td>0.960</td><td>1.533</td><td>5.289</td><td>10.397</td><td>72.5</td></tr>
+<tr><th scope="row">Chain-of-Draft</th><td>54.06</td><td>0.416</td><td>0.798</td><td>3.657</td><td>6.616</td><td>69.9</td></tr>
+<tr><th scope="row">Sketch-of-Thought</th><td>56.07</td><td>0.543</td><td>1.054</td><td>3.487</td><td>7.048</td><td>71.7</td></tr>
+<tr><th scope="row">Efficiency-reward RL</th><td>56.28</td><td>0.756</td><td>1.273</td><td>4.638</td><td>8.675</td><td>68.9</td></tr>
+<tr><th scope="row">Probe &amp; Prefill</th><td>55.49</td><td>0.890</td><td>1.564</td><td>5.219</td><td>11.369</td><td>65.8</td></tr>
+<tr class="ours"><th scope="row">SSR (ours)</th><td>58.36</td><td>0.061</td><td>0.071</td><td>2.514</td><td>4.620</td><td>3029.9</td></tr></tbody></table></div>
+        <p class="table-note">All success rates in this table refer to the profiling subset, rather than the full evaluation sets. Latencies are in seconds; p95 is the 95th percentile.</p>
+      </section>
+    </div>
+    <section class="section wide" id="analysis">
+      <h2>What Makes Selection Work?</h2>
+      <div class="prose">
+        <h3>Score the meaning of the whole candidate</h3>
+        <p>Scoring full reasoning text achieves 61.37% average success, compared with 58.98% when scoring only a candidate index. Both variants insert the same selected text before action generation; the difference is whether candidate selection uses the reasoning tokens themselves.</p>
+        <p>Autoregressive generation can reproduce library entries after an SFT warm start, but retains sequential reasoning generation. Without SFT, the autoregressive variant produces freeform reasoning despite the prompt and format reward. SSR enforces the reasoning library through selection.</p>
+      </div>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Reasoning representation ablation; scroll horizontally on narrow screens"><table><thead><tr><th scope="col">Reasoning method</th><th scope="col">MMSearch</th><th scope="col">HR-MMSearch</th><th scope="col">FVQA-test</th><th scope="col">SimpleVQA</th><th scope="col">LiveVQA</th><th scope="col">MAT-Search</th><th scope="col">InfoSeek</th><th scope="col">Average</th></tr></thead><tbody><tr class="ours"><th scope="row">Entire reasoning</th><td>61.40</td><td>30.16</td><td>70.22</td><td>71.08</td><td>57.19</td><td>78.67</td><td>60.90</td><td>61.37</td></tr>
+<tr><th scope="row">Index only</th><td>60.82</td><td>22.30</td><td>67.56</td><td>69.99</td><td>55.56</td><td>77.33</td><td>59.30</td><td>58.98</td></tr>
+<tr><th scope="row">Autoregressive · with SFT</th><td>61.40</td><td>29.84</td><td>69.22</td><td>69.10</td><td>56.97</td><td>72.00</td><td>61.55</td><td>60.01</td></tr>
+<tr><th scope="row">Autoregressive · without SFT</th><td>60.23</td><td>33.11</td><td>67.28</td><td>68.41</td><td>54.67</td><td>79.33</td><td>58.60</td><td>60.23</td></tr></tbody></table></div>
+      <div class="prose"><h3>A small library supports different information needs</h3><p>Average success rises from 37.24% with a single generic candidate to 61.37% with six candidates. Moving from one generic candidate to two choices—answer or use a tool—already yields a 17.27 percentage point gain.</p></div>
+      <div class="fig-pair">
+        <figure><img src="assets/library-size.png" loading="lazy" alt="Library size ablation: average success increases from 37.24 percent with one candidate to 61.37 percent with six."><figcaption>More specific reasoning choices improve average success.</figcaption></figure>
+        <figure><img src="assets/selection-distribution.png" loading="lazy" alt="Reasoning selection distributions vary across the seven benchmarks, using the same checkpoint and reasoning library."><figcaption>The same checkpoint uses different reasoning-selection distributions across benchmarks.</figcaption></figure>
+      </div>
+      <div class="prose"><p>SimpleVQA most often selects “Answer from image,” while HR-MMSearch has the highest selection rate for “Examine image detail.” The generated action type matches the selected candidate’s expected action type in 99.9% of turns. These measurements show operational consistency and different selection patterns across tasks.</p></div>
+    </section>
+    <div class="band">
+      <section class="section wide" id="pseudocode">
+        <h2>Pseudocode</h2>
+        <p class="lead">Inference with SGLang, and grouped GRPO training.</p>
+        <nav class="section-nav" aria-label="Algorithms"><a href="#algorithm-1">Algorithm 1 · Inference</a><a href="#algorithm-2">Algorithm 2 · Training</a></nav>
+        <details class="pseudocode-details prose">
+          <summary>Inference details</summary>
+          <div class="details-body">
+          <p>The running context $h_t$ contains the complete interaction before turn $t+1$. Each candidate is a nonempty token sequence including its reasoning delimiters; inputs include the required chat delimiters and assistant prefixes.</p>
+          <p>Action sampling parameters $\eta$ specify the token limit (e.g., <code>max_new_tokens=8192</code>), temperature, and stopping conditions, with one completion per input. The selection temperature $\tau$ is independent of these action settings.</p>
+          <p>While $h_t$ stores tokens, the persistent SGLang engine owns the KV cache of computed model states. KV tensors are not endpoint arguments or return values. New observations enter the cache when the next model call processes them. For multimodal inputs, the adapter supplies matching <code>image_data</code> per request row and tracks expanded token positions; those payloads are omitted below.</p>
+          <p>SGLang accepts variable-length candidate sequences without caller padding. Setting <code>logprob_start_len</code> to $L_t-1$ leaves the final $K_i$ input-token log-probabilities aligned with candidate $r_i$. Candidates use causal attention and do not attend to one another.</p>
+          </div>
+        </details>
+        <article class="algorithm" id="algorithm-1"><h3>Algorithm 1 · SSR inference using SGLang’s generate interface</h3><div class="algorithm-meta"><p><strong>Require: </strong>Tokenized system prompt <span class="math" data-tex="s">s</span> and initial question <span class="math" data-tex="q">q</span>; reasoning library <span class="math" data-tex="\mathcal R=\{r_1,\ldots,r_N\}">\mathcal R=\{r_1,\ldots,r_N\}</span>; persistent SGLang engine <span class="math" data-tex="\pi_\theta">\pi_\theta</span> with prefix caching; harness <span class="math" data-tex="\mathcal H">\mathcal H</span>; normalization exponent <span class="math" data-tex="\alpha\in[0,1]">\alpha\in[0,1]</span>; selection temperature <span class="math" data-tex="\tau\geq0">\tau\geq0</span>; action sampling parameters <span class="math" data-tex="\eta">\eta</span>; turn limit <span class="math" data-tex="T_{\max}\geq1">T_{\max}\geq1</span></p><p><strong>Output: </strong><span class="math" data-tex="(h,\delta)">(h,\delta)</span>: final token context and stopping status</p><p><strong>Conventions:</strong> <span class="math" data-tex="\Vert">\Vert</span> concatenates tokens; response indexing is zero-based; <span class="math" data-tex="[-K:]">[-K:]</span> takes the last <span class="math" data-tex="K">K</span> entries. Each <code>generate</code> call reuses and updates the engine-owned KV cache <span class="math" data-tex="\mathcal C_{\mathrm{KV}}">\mathcal C_{\mathrm{KV}}</span>.</p><p><strong>Validity:</strong> A final answer must be parseable and nonempty; a tool request must name an allowed tool and satisfy its argument schema, according to <span class="math" data-tex="\mathcal H">\mathcal H</span>.</p></div><div class="algorithm-scroll" tabindex="0" role="region" aria-label="Algorithm 1; scroll horizontally on narrow screens"><ol class="algorithm-lines"><li style="--indent:0"><span class="math" data-tex="h_0\gets s\Vert q">h_0\gets s\Vert q</span>; <span class="math" data-tex="K_i\gets|r_i|">K_i\gets|r_i|</span> for <span class="math" data-tex="i=1,\ldots,N">i=1,\ldots,N</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> context tokens; candidate lengths</span></li>
+<li style="--indent:0"><span class="math" data-tex="g_0\gets\{\texttt{&quot;max\_new\_tokens&quot;}:0\}">g_0\gets\{\texttt{&quot;max\_new\_tokens&quot;}:0\}</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> prefill-only sampling parameters</span></li>
+<li style="--indent:0"><span class="math" data-tex="\begin{aligned}
+  \pi_\theta.\texttt{generate}(&amp;\texttt{input\_ids}=s,\\
+  &amp;\texttt{sampling\_params}=g_0,\\
+  &amp;\texttt{return\_logprob}=\texttt{False}) \qquad \triangleright\text{ warm the system-prompt cache}
+\end{aligned}">\begin{aligned}
+  \pi_\theta.\texttt{generate}(&amp;\texttt{input\_ids}=s,\\
+  &amp;\texttt{sampling\_params}=g_0,\\
+  &amp;\texttt{return\_logprob}=\texttt{False}) \qquad \triangleright\text{ warm the system-prompt cache}
+\end{aligned}</span></li>
+<li style="--indent:0"><b>for</b> <span class="math" data-tex="t=0,\ldots,T_{\max}-1">t=0,\ldots,T_{\max}-1</span> <b>do</b></li>
+<li style="--indent:1"><span class="math" data-tex="L_t\gets|h_t|">L_t\gets|h_t|</span>; <span class="math" data-tex="X\gets[h_t\Vert r_i]_{i=1}^N">X\gets[h_t\Vert r_i]_{i=1}^N</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> <span class="math" data-tex="N">N</span> variable-length token sequences</span></li>
+<li style="--indent:1"><span class="math" data-tex="\begin{aligned}
+    Y\gets\pi_\theta.\texttt{generate}(&amp;\texttt{input\_ids}=X,\\
+    &amp;\texttt{sampling\_params}=g_0,\\
+    &amp;\texttt{return\_logprob}=\texttt{True},\\
+    &amp;\texttt{logprob\_start\_len}=L_t-1) \qquad \triangleright\text{ list of }N\text{ responses}
+  \end{aligned}">\begin{aligned}
+    Y\gets\pi_\theta.\texttt{generate}(&amp;\texttt{input\_ids}=X,\\
+    &amp;\texttt{sampling\_params}=g_0,\\
+    &amp;\texttt{return\_logprob}=\texttt{True},\\
+    &amp;\texttt{logprob\_start\_len}=L_t-1) \qquad \triangleright\text{ list of }N\text{ responses}
+  \end{aligned}</span></li>
+<li style="--indent:1"><b>for</b> <span class="math" data-tex="i=1,\ldots,N">i=1,\ldots,N</span> <b>do</b></li>
+<li style="--indent:2"><span class="math" data-tex="D_i\gets Y[i-1].\texttt{input\_token\_logprob}[-K_i:]">D_i\gets Y[i-1].\texttt{input\_token\_logprob}[-K_i:]</span></li>
+<li style="--indent:2">Verify <span class="math" data-tex="[d[1]\text{ for }d\in D_i]=r_i">[d[1]\text{ for }d\in D_i]=r_i</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> record: (log-probability, token ID, text)</span></li>
+<li style="--indent:2"><span class="math" data-tex="\ell_i\gets[d[0]\text{ for }d\in D_i]">\ell_i\gets[d[0]\text{ for }d\in D_i]</span>; verify all entries are finite <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> <span class="math" data-tex="|\ell_i|=K_i">|\ell_i|=K_i</span></span></li>
+<li style="--indent:2"><span class="math" data-tex="S_{t,i}\gets K_i^{-\alpha}\sum_{j=0}^{K_i-1}\ell_i[j]">S_{t,i}\gets K_i^{-\alpha}\sum_{j=0}^{K_i-1}\ell_i[j]</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> candidate scores <span class="math" data-tex="S_t\in\mathbb R^N">S_t\in\mathbb R^N</span></span></li>
+<li style="--indent:1"><b>end for</b></li>
+<li style="--indent:1"><b>if</b> <span class="math" data-tex="\tau=0">\tau=0</span> <b>then</b></li>
+<li style="--indent:2"><span class="math" data-tex="i_t\gets\min\arg\max_i S_{t,i}">i_t\gets\min\arg\max_i S_{t,i}</span></li>
+<li style="--indent:1"><b>else</b></li>
+<li style="--indent:2"><span class="math" data-tex="i_t\sim\operatorname{Categorical}(\operatorname{softmax}(S_t/\tau))">i_t\sim\operatorname{Categorical}(\operatorname{softmax}(S_t/\tau))</span></li>
+<li style="--indent:1"><b>end if</b></li>
+<li style="--indent:1"><span class="math" data-tex="z_t\gets r_{i_t}">z_t\gets r_{i_t}</span>; <span class="math" data-tex="u_t\gets h_t\Vert z_t">u_t\gets h_t\Vert z_t</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> append selected reasoning to current context</span></li>
+<li style="--indent:1"><span class="math" data-tex="\begin{aligned}
+    A\gets\pi_\theta.\texttt{generate}(&amp;\texttt{input\_ids}=u_t,\\
+    &amp;\texttt{sampling\_params}=\eta,\\
+    &amp;\texttt{return\_logprob}=\texttt{False})
+  \end{aligned}">\begin{aligned}
+    A\gets\pi_\theta.\texttt{generate}(&amp;\texttt{input\_ids}=u_t,\\
+    &amp;\texttt{sampling\_params}=\eta,\\
+    &amp;\texttt{return\_logprob}=\texttt{False})
+  \end{aligned}</span></li>
+<li style="--indent:1"><span class="math" data-tex="a_t\gets A.\texttt{output\_ids}">a_t\gets A.\texttt{output\_ids}</span>; <span class="math" data-tex="h_t^+\gets u_t\Vert a_t">h_t^+\gets u_t\Vert a_t</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> action tokens; extended context</span></li>
+<li style="--indent:1"><b>if</b> <span class="math" data-tex="a_t">a_t</span> is a valid final answer <b>then</b></li>
+<li style="--indent:2"><b>return</b> <span class="math" data-tex="(h_t^+,\texttt{answer})">(h_t^+,\texttt{answer})</span></li>
+<li style="--indent:1"><b>else if</b> <span class="math" data-tex="a_t">a_t</span> is not a valid tool request <b>then</b></li>
+<li style="--indent:2"><b>return</b> <span class="math" data-tex="(h_t^+,\texttt{invalid-output})">(h_t^+,\texttt{invalid-output})</span></li>
+<li style="--indent:1"><b>end if</b></li>
+<li style="--indent:1"><span class="math" data-tex="(o_t,\delta_t)\gets\mathcal H.\texttt{execute}(a_t)">(o_t,\delta_t)\gets\mathcal H.\texttt{execute}(a_t)</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> observation tokens; <code>continue</code> or error</span></li>
+<li style="--indent:1"><span class="math" data-tex="h_{t+1}\gets h_t^+\Vert o_t">h_{t+1}\gets h_t^+\Vert o_t</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> observation includes the next assistant prefix</span></li>
+<li style="--indent:1"><b>if</b> <span class="math" data-tex="\delta_t\neq\texttt{continue}">\delta_t\neq\texttt{continue}</span> <b>then</b></li>
+<li style="--indent:2"><b>return</b> <span class="math" data-tex="(h_{t+1},\delta_t)">(h_{t+1},\delta_t)</span></li>
+<li style="--indent:1"><b>end if</b></li>
+<li style="--indent:0"><b>end for</b></li>
+<li style="--indent:0"><b>return</b> <span class="math" data-tex="(h_{T_{\max}},\texttt{turn-limit})">(h_{T_{\max}},\texttt{turn-limit})</span></li></ol></div></article>
+        <details class="pseudocode-details prose">
+          <summary>Grouped GRPO training details</summary>
+          <div class="details-body">
+          <p>Each iteration collects a fresh minibatch of rollout groups and takes one optimizer step. Training uses clipping threshold $\epsilon&gt;0$, reasoning-selection weight $\gamma^{\mathrm{RL}}_{\mathrm{reason}}\geq0$, reference-policy KL weight $\beta\geq0$, and reward-standard-deviation floor $\delta&gt;0$.</p>
+          <p>During rollout logging, set <code>return_logprob=True</code> on Algorithm 1’s action-generation request. Logged behavior probabilities and current action likelihoods must use the same sampling distribution. Each trajectory retains its turns, final context, observations, media references, and stopping status, allowing $f_{\mathrm{reward}}$ to score unsuccessful and truncated trajectories.</p>
+          </div>
+        </details>
+        <article class="algorithm" id="algorithm-2"><h3>Algorithm 2 · Grouped GRPO with detached competitor scores</h3><div class="algorithm-meta"><p><strong>Require: </strong>Parameters <span class="math" data-tex="\theta">\theta</span>; frozen reference <span class="math" data-tex="p_{\mathrm{ref}}">p_{\mathrm{ref}}</span>; system prompt <span class="math" data-tex="s">s</span>; question distribution <span class="math" data-tex="\mathcal D">\mathcal D</span>; library <span class="math" data-tex="\mathcal R">\mathcal R</span>; harness <span class="math" data-tex="\mathcal H">\mathcal H</span>; reward function <span class="math" data-tex="f_{\mathrm{reward}}">f_{\mathrm{reward}}</span>; questions per minibatch <span class="math" data-tex="m\geq1">m\geq1</span>; group size <span class="math" data-tex="n\geq2">n\geq2</span>; rollout settings <span class="math" data-tex="\alpha">\alpha</span>, <span class="math" data-tex="\tau&gt;0">\tau&gt;0</span>, <span class="math" data-tex="\eta">\eta</span>, <span class="math" data-tex="T_{\max}">T_{\max}</span>; training hyperparameters <span class="math" data-tex="\epsilon">\epsilon</span>, <span class="math" data-tex="\gamma^{\mathrm{RL}}_{\mathrm{reason}}">\gamma^{\mathrm{RL}}_{\mathrm{reason}}</span>, <span class="math" data-tex="\beta">\beta</span>, <span class="math" data-tex="\delta">\delta</span>; optimizer <span class="math" data-tex="\mathcal O">\mathcal O</span></p><p><strong>Output: </strong>Trained parameters <span class="math" data-tex="\theta">\theta</span></p><p><strong>Conventions:</strong> <span class="math" data-tex="\Vert">\Vert</span> concatenates tokens; arrays are zero-based and candidate indices one-based. Rollout records are detached. <span class="math" data-tex="N=|\mathcal R|">N=|\mathcal R|</span>; <span class="math" data-tex="\operatorname{LSE}(u)=\log\sum_i e^{u[i]}">\operatorname{LSE}(u)=\log\sum_i e^{u[i]}</span>.</p><p><strong>Surrogate:</strong> <span class="math" data-tex="\ell_\epsilon(\rho,A)=\min\{\rho A,\operatorname{clip}(\rho,1-\epsilon,1+\epsilon)A\}">\ell_\epsilon(\rho,A)=\min\{\rho A,\operatorname{clip}(\rho,1-\epsilon,1+\epsilon)A\}</span>.</p></div><div class="algorithm-scroll" tabindex="0" role="region" aria-label="Algorithm 2; scroll horizontally on narrow screens"><ol class="algorithm-lines"><li style="--indent:0"><b>while</b> the training budget remains <b>do</b></li>
+<li style="--indent:1"><span class="math" data-tex="\theta_{\mathrm{old}}\gets\operatorname{stopgrad}(\operatorname{copy}(\theta))">\theta_{\mathrm{old}}\gets\operatorname{stopgrad}(\operatorname{copy}(\theta))</span></li>
+<li style="--indent:1">Synchronize <span class="math" data-tex="\pi_{\mathrm{old}}">\pi_{\mathrm{old}}</span> to <span class="math" data-tex="\theta_{\mathrm{old}}">\theta_{\mathrm{old}}</span>; invalidate its weight-dependent caches</li>
+<li style="--indent:1">Sample <span class="math" data-tex="m">m</span> questions <span class="math" data-tex="X\sim\mathcal D^m">X\sim\mathcal D^m</span>; <span class="math" data-tex="\mathcal M\gets[\,]">\mathcal M\gets[\,]</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> current rollout minibatch</span></li>
+<li style="--indent:1"><b>for</b> each question <span class="math" data-tex="x\in X">x\in X</span> <b>do</b></li>
+<li style="--indent:2"><b>for</b> <span class="math" data-tex="g=1,\ldots,n">g=1,\ldots,n</span> <b>do</b></li>
+<li style="--indent:3">Collect <span class="math" data-tex="d_g">d_g</span> with <a href="#algorithm-1">Algorithm 1</a> using <span class="math" data-tex="\pi_{\mathrm{old}}">\pi_{\mathrm{old}}</span> and question <span class="math" data-tex="x">x</span>, with turn logging</li>
+<li style="--indent:3"><span class="math" data-tex="R_g\gets f_{\mathrm{reward}}(x,d_g)">R_g\gets f_{\mathrm{reward}}(x,d_g)</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> reward, including non-answer stopping cases</span></li>
+<li style="--indent:2"><b>end for</b></li>
+<li style="--indent:2"><span class="math" data-tex="\mu\gets n^{-1}\sum_g R_g">\mu\gets n^{-1}\sum_g R_g</span>; <span class="math" data-tex="\sigma\gets\sqrt{n^{-1}\sum_g(R_g-\mu)^2}">\sigma\gets\sqrt{n^{-1}\sum_g(R_g-\mu)^2}</span></li>
+<li style="--indent:2"><b>for</b> <span class="math" data-tex="g=1,\ldots,n">g=1,\ldots,n</span> <b>do</b></li>
+<li style="--indent:3"><span class="math" data-tex="d_g.\texttt{adv}\gets\operatorname{stopgrad}((R_g-\mu)/\max(\sigma,\delta))">d_g.\texttt{adv}\gets\operatorname{stopgrad}((R_g-\mu)/\max(\sigma,\delta))</span>; append <span class="math" data-tex="d_g">d_g</span> to <span class="math" data-tex="\mathcal M">\mathcal M</span></li>
+<li style="--indent:2"><b>end for</b></li>
+<li style="--indent:1"><b>end for</b></li>
+<li style="--indent:1"><span class="math" data-tex="J\gets0">J\gets0</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> accumulated surrogate; <span class="math" data-tex="|\mathcal M|=mn">|\mathcal M|=mn</span> trajectories</span></li>
+<li style="--indent:1"><b>for</b> each trajectory <span class="math" data-tex="d\in\mathcal M">d\in\mathcal M</span> <b>do</b></li>
+<li style="--indent:2"><b>for</b> each turn <span class="math" data-tex="v\in d.\texttt{turns}">v\in d.\texttt{turns}</span> <b>do</b></li>
+<li style="--indent:3"><span class="math" data-tex="(h,z,a,i)\gets(v.\texttt{h},v.\texttt{z},v.\texttt{a},v.\texttt{index})">(h,z,a,i)\gets(v.\texttt{h},v.\texttt{z},v.\texttt{a},v.\texttt{index})</span>; <span class="math" data-tex="K\gets|z|">K\gets|z|</span>; <span class="math" data-tex="w\gets z\Vert a">w\gets z\Vert a</span></li>
+<li style="--indent:3"><span class="math" data-tex="b\gets[\log p_\theta(w[k]\mid h\Vert w[:k])]_{k=0}^{|w|-1}">b\gets[\log p_\theta(w[k]\mid h\Vert w[:k])]_{k=0}^{|w|-1}</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> teacher forcing; gradients enabled</span></li>
+<li style="--indent:3"><span class="math" data-tex="s_{\mathrm{sel}}\gets K^{-\alpha}\sum_{j=0}^{K-1}b[j]">s_{\mathrm{sel}}\gets K^{-\alpha}\sum_{j=0}^{K-1}b[j]</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> current selected-candidate score</span></li>
+<li style="--indent:3"><span class="math" data-tex="u\gets\operatorname{stopgrad}(v.\texttt{scores}/\tau)">u\gets\operatorname{stopgrad}(v.\texttt{scores}/\tau)</span>; <span class="math" data-tex="u[i-1]\gets s_{\mathrm{sel}}/\tau">u[i-1]\gets s_{\mathrm{sel}}/\tau</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> <span class="math" data-tex="N">N</span> selector logits</span></li>
+<li style="--indent:3"><span class="math" data-tex="\widetilde b^{\mathrm{reason}}\gets u[i-1]-\operatorname{LSE}(u)">\widetilde b^{\mathrm{reason}}\gets u[i-1]-\operatorname{LSE}(u)</span></li>
+<li style="--indent:3"><span class="math" data-tex="\rho^{\mathrm{reason}}\gets\exp(\widetilde b^{\mathrm{reason}}-v.\texttt{logq})">\rho^{\mathrm{reason}}\gets\exp(\widetilde b^{\mathrm{reason}}-v.\texttt{logq})</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> one scalar ratio</span></li>
+<li style="--indent:3"><span class="math" data-tex="\rho^{\mathrm{action}}\gets\exp(b[K:]-v.\texttt{logp})">\rho^{\mathrm{action}}\gets\exp(b[K:]-v.\texttt{logp})</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> <span class="math" data-tex="|a|">|a|</span> token ratios, elementwise</span></li>
+<li style="--indent:3"><span class="math" data-tex="J\gets J+\gamma^{\mathrm{RL}}_{\mathrm{reason}}\ell_\epsilon(\rho^{\mathrm{reason}},d.\texttt{adv})+\sum_k\ell_\epsilon(\rho^{\mathrm{action}}[k],d.\texttt{adv})">J\gets J+\gamma^{\mathrm{RL}}_{\mathrm{reason}}\ell_\epsilon(\rho^{\mathrm{reason}},d.\texttt{adv})+\sum_k\ell_\epsilon(\rho^{\mathrm{action}}[k],d.\texttt{adv})</span></li>
+<li style="--indent:2"><b>end for</b></li>
+<li style="--indent:1"><b>end for</b></li>
+<li style="--indent:1"><span class="math" data-tex="\widehat{\mathcal K}\gets">\widehat{\mathcal K}\gets</span> reference-policy KL estimate on generated action positions in <span class="math" data-tex="\mathcal M">\mathcal M</span></li>
+<li style="--indent:1"><span class="math" data-tex="\mathcal L\gets-J/|\mathcal M|+\beta\widehat{\mathcal K}">\mathcal L\gets-J/|\mathcal M|+\beta\widehat{\mathcal K}</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> scalar loss; trajectory average</span></li>
+<li style="--indent:1"><span class="math" data-tex="\mathcal O.\texttt{zero\_grad}()">\mathcal O.\texttt{zero\_grad}()</span>; <span class="math" data-tex="\mathcal L.\texttt{backward}()">\mathcal L.\texttt{backward}()</span>; <span class="math" data-tex="\mathcal O.\texttt{step}()">\mathcal O.\texttt{step}()</span> <span class="comment"> <span class="math" data-tex="\triangleright">\triangleright</span> one update from <span class="math" data-tex="\mathcal M">\mathcal M</span></span></li>
+<li style="--indent:0"><b>end while</b></li>
+<li style="--indent:0"><b>return</b> <span class="math" data-tex="\theta">\theta</span></li></ol></div></article>
+        <details class="pseudocode-details prose">
+          <summary>Turn records and differentiable updates</summary>
+          <div class="details-body">
+          <p>Each turn stores the context <code>h</code>, selected reasoning <code>z</code>, action <code>a</code>, candidate <code>index</code>, and rollout candidate <code>scores</code>. It also stores the selected-candidate log-probability</p>
+          <div class="equation">$$\displaystyle v.\texttt{logq}=\frac{S^{\mathrm{old}}_{t,i_t}}{\tau}-\operatorname{LSE}\!\left(\frac{S_t^{\mathrm{old}}}{\tau}\right)$$</div>
+          <p>and the action-token log-probabilities <code>logp</code> from <code>output_token_logprobs</code>, in token order. Verify their token IDs against the action and retain exactly $|a_t|$ finite values.</p>
+          <p>Recompute likelihoods using the differentiable model $p_\theta$; SGLang rollout outputs are detached. Only the selected candidate’s score receives gradients, through both the softmax numerator and denominator. Teacher-forced turns may be batched with causal attention and true-length masks. Action losses and reference-policy KL apply only to generated action positions; prompts, inserted reasoning, and observations remain visible as context. Exclude padding from attention and loss.</p>
+          </div>
+        </details>
+      </section>
+    </div>
+    <section class="section prose" id="conclusion">
+      <h2>Reasoning in a Reusable Space</h2>
+      <p>Small search agents may not need to reason over the full language space at every step. By organizing recurring reasoning into a compact library and selecting through parallel scoring, SSR achieves competitive multimodal search performance with substantially lower model inference latency.</p>
+    </section>
+
+  </main>
+  <footer class="footer"><a href="#top">SSR · Back to top ↑</a></footer>
+</body>
+</html>
