@@ -82,23 +82,10 @@ p+p {
   margin-bottom:20px;
 }
 .mark {
-  display:flex;
-  flex-direction:column;
-  justify-content:center;
-  gap:5px;
+  display:block;
+  flex-shrink:0;
   width:42px;
   height:42px;
-  padding:10px;
-  background:var(--accent);
-  border-radius:12px;
-}
-.mark i {
-  height:3px;
-  background:white;
-  border-radius:4px;
-}
-.mark i:last-child {
-  width:62%;
 }
 h1 {
   font-size:clamp(34px,4vw,49px);
@@ -131,6 +118,10 @@ h1 {
   justify-content:center;
   margin-top:19px;
   font-size:18px;
+}
+.contact-email {
+  font-size:16px;
+  margin-top:6px;
 }
 .author-notes {
   font-size:14px;
