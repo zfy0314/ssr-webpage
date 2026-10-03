@@ -180,6 +180,13 @@ h1 {
   border-radius:10px;
   background:white;
 }
+.teaser-footnote {
+  margin-top:10px;
+  text-align:center;
+  font-size:13px;
+  line-height:1.5;
+  color:var(--muted);
+}
 .teaser figcaption {
   text-align:center;
   margin:16px 0 24px;
